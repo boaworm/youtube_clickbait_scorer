@@ -14,11 +14,14 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Analyze a video
+# Analyze a video (CLI)
 python -m src.main "https://www.youtube.com/watch?v=VIDEO_ID"
 
 # Verbose output (shows full description and transcript)
 python -m src.main -v "https://www.youtube.com/watch?v=VIDEO_ID"
+
+# Launch web UI (runs on http://localhost:4004)
+python -m src.main --webserver
 ```
 
 ## System Requirements
@@ -108,6 +111,7 @@ youtube-verifier/
 ├── src/
 │   ├── __init__.py
 │   ├── main.py              # CLI entry point
+│   ├── webserver.py         # FastAPI web UI
 │   ├── youtube_fetcher.py   # Main fetcher with fallback logic
 │   ├── metadata_extractor.py # yt-dlp metadata extraction
 │   ├── video_downloader.py  # Audio download via yt-dlp
@@ -152,6 +156,22 @@ or getting inconsistent results, you may need to adjust:
 - **Temperature**: Lower (0.1-0.3) for more consistent scores
 - **Model choice**: Larger models typically produce better reasoning
 - **Prompt**: The system prompt in `src/clickbait_analyzer.py` can be customized
+
+## Web UI
+
+Run `python -m src.main --webserver` to launch a web interface on port 4004.
+
+The UI provides:
+- Text input for YouTube URLs
+- "Clickbait?" button to trigger analysis
+- Results display showing score and reasoning
+
+API endpoint:
+```bash
+curl -X POST http://localhost:4004/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://www.youtube.com/watch?v=VIDEO_ID"}'
+```
 
 ## Troubleshooting
 

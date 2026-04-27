@@ -18,6 +18,7 @@ def main():
     )
     parser.add_argument(
         "url",
+        nargs="?",
         help="YouTube video URL to analyze"
     )
     parser.add_argument(
@@ -25,8 +26,26 @@ def main():
         action="store_true",
         help="Show full description and transcript"
     )
+    parser.add_argument(
+        "--webserver",
+        action="store_true",
+        help="Launch web UI on port 4004"
+    )
 
     args = parser.parse_args()
+
+    # Launch web server mode
+    if args.webserver:
+        from src.webserver import run_server
+        print("Starting YouTube Clickbait Detector web UI...")
+        print("Open http://localhost:4004 in your browser")
+        run_server()
+        return
+
+    # CLI mode requires URL
+    if not args.url:
+        parser.print_help()
+        sys.exit(1)
 
     # Fetch metadata
     video_data = fetch_video_data(args.url, verbose=False)
