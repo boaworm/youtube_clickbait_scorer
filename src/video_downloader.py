@@ -30,6 +30,9 @@ def download_audio(
     Raises:
         DownloadError: If download fails
     """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Use safe filename template to avoid Unicode character issues
     output_template = str(output_dir / "%(title)s.%(ext)s")
 
     ydl_opts = {
@@ -37,8 +40,9 @@ def download_audio(
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
-        'progress_hooks': [],  # Disable progress hooks
+        'progress_hooks': [],
         'timeout': timeout,
+        'restrictfilenames': True,  # Use safe filenames (no Unicode chars)
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': output_format,
@@ -49,10 +53,16 @@ def download_audio(
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
-            # After post-processing, the file will have the new extension
-            output_file = output_dir / f"{info.get('title', 'audio')}.{output_format}"
-            return output_file
+
+            # Scan directory for the actual downloaded file
+            # (yt-dlp may modify the filename during processing)
+            for f in output_dir.iterdir():
+                if f.suffix == f'.{output_format}':
+                    return f
+
+            # Fallback: construct expected path
+            return output_dir / f"{info.get('title', 'audio')}.{output_format}"
+
     except Exception as e:
         raise DownloadError(video_url, str(e))
-
 

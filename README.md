@@ -143,6 +143,16 @@ ANTHROPIC_API_KEY=sk-ant-...
 HF_TOKEN=
 ```
 
+### LLM Tuning
+
+The clickbait analysis uses an LLM to evaluate title vs content alignment. Default
+parameters are tuned for Qwen 3.5 via llama.cpp. If you're using a different model
+or getting inconsistent results, you may need to adjust:
+
+- **Temperature**: Lower (0.1-0.3) for more consistent scores
+- **Model choice**: Larger models typically produce better reasoning
+- **Prompt**: The system prompt in `src/clickbait_analyzer.py` can be customized
+
 ## Troubleshooting
 
 ### "Numpy is not available" error
