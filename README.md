@@ -1,6 +1,8 @@
 # YouTube Clickbait Detector
 
-Analyzes YouTube videos to determine if titles make claims not substantiated by the actual content (e.g., "Leak confirmed" when the video only contains speculation).
+Analyzes YouTube videos to determine if titles make claims not substantiated
+by the actual content (e.g., "Leak confirmed" when the video only contains
+speculation).
 
 ## Quick Start
 
@@ -37,7 +39,16 @@ Transcription score: 95% clickbait
 -----------------------------------
 Analysis: CLICKBAIT (95%)
 
-The title explicitly states 'MacBook M6 ULTRA Just Got CONFIRMED,' implying definitive verification of the product's existence and specifications, yet the video content is entirely speculative. Throughout the transcript, the presenter repeatedly uses qualifiers such as 'could be releasing,' 'leaks and rumors,' 'could potentially still be on the cards,' and 'potentially we could have the m6 ultra chip,' with no actual confirmation from Apple or definitive sources provided. This discrepancy between the definitive claim in the title and the uncertain, rumor-based nature of the content fits the strict definition of clickbait where a title promises confirmation but the video only speculates.
+The title explicitly states 'MacBook M6 ULTRA Just Got CONFIRMED,' implying
+definitive verification of the product's existence and specifications, yet
+the video content is entirely speculative. Throughout the transcript, the
+presenter repeatedly uses qualifiers such as 'could be releasing,' 'leaks
+and rumors,' 'could potentially still be on the cards,' and 'potentially we
+could have the m6 ultra chip,' with no actual confirmation from Apple or
+definitive sources provided. This discrepancy between the definitive claim
+in the title and the uncertain, rumor-based nature of the content fits the
+strict definition of clickbait where a title promises confirmation but the
+video only speculates.
 ```
 
 ## How It Works
@@ -59,7 +70,8 @@ The system tries multiple methods to get a transcript:
 | Method | Description |
 |--------|-------------|
 | **youtube-transcript-api** | First attempt - fetches available captions |
-| **MLX Whisper** | Fallback: downloads audio, transcribes locally using MLX-optimized Whisper |
+| **MLX Whisper** | Fallback: downloads audio, transcribes locally using
+MLX-optimized Whisper |
 
 ### 3. Audio Processing (Fallback Only)
 
@@ -67,7 +79,9 @@ When captions aren't available:
 
 1. **Download**: `yt-dlp` downloads audio-only stream (m4a format)
 2. **Convert**: `ffmpeg` converts to WAV (16kHz mono for Whisper)
-3. **Transcribe**: MLX Whisper (`mlx-community/whisper-large-v3-turbo`) generates the transcript using Apple's Neural Engine
+3. **Transcribe**: MLX Whisper
+   (`mlx-community/whisper-large-v3-turbo`) generates the transcript using
+   Apple's Neural Engine
 4. **Cache**: Results are cached for future runs
 
 ### 4. Clickbait Analysis
@@ -116,12 +130,17 @@ Optional configuration via `.env` file:
 YOUTUBE_API_KEY=your_api_key_here
 
 # LLM configuration (for clickbait analysis)
-ANTHROPIC_BASE_URL=https://your-llm-endpoint
+# If using a local llama.cpp server:
+ANTHROPIC_BASE_URL=http://localhost:8080
 ANTHROPIC_MODEL=model-name
 ANTHROPIC_AUTH_TOKEN=token
 
-# Hugging Face token (for MLX Whisper model downloads)
-HF_TOKEN=hf_xxxxx
+# Or if using Anthropic Cloud API directly:
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Hugging Face token (optional - for MLX Whisper model downloads)
+# Get one at: https://huggingface.co/settings/tokens
+HF_TOKEN=
 ```
 
 ## Troubleshooting
