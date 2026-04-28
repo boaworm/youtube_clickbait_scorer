@@ -166,6 +166,24 @@ The UI provides:
 - "Clickbait?" button to trigger analysis
 - Results display showing score and reasoning
 
+### Screenshots
+
+**Web UI in progress:**
+
+![Web UI in progress](screenshots/webserver_mode_in_progress.png)
+
+**Web UI with results:**
+
+![Web UI results](screenshots/webserver_mode.png)
+
+**Browser extension on YouTube:**
+
+![Browser extension](screenshots/youtube_com.png)
+
+**Browser extension analyzing multiple videos:**
+
+![Multiple video analysis](screenshots/youtube_multi.png)
+
 API endpoint:
 ```bash
 curl -X POST http://localhost:4004/analyze \
