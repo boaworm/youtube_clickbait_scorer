@@ -40,6 +40,7 @@ def download_audio(
         'outtmpl': output_template,
         'quiet': True,
         'no_warnings': True,
+        'noprogress': True,
         'progress_hooks': [],
         'timeout': timeout,
         'restrictfilenames': True,  # Use safe filenames (no Unicode chars)

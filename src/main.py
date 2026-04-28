@@ -2,9 +2,17 @@
 """CLI for YouTube clickbait detector."""
 
 import argparse
+import signal
 import sys
 import time
+from datetime import datetime
 from dotenv import load_dotenv
+
+# Let the OS handle broken pipes (e.g. piping to tee and hitting Ctrl-C)
+try:
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+except AttributeError:
+    pass  # Windows has no SIGPIPE
 
 from src.youtube_fetcher import fetch_video_data
 from src.clickbait_analyzer import analyze_for_clickbait
@@ -37,8 +45,9 @@ def main():
     # Launch web server mode
     if args.webserver:
         from src.webserver import run_server
-        print("Starting YouTube Clickbait Detector web UI...")
-        print("Open http://localhost:4004 in your browser")
+        ts = datetime.now().strftime("[%H:%M:%S]")
+        print(f"{ts} Starting YouTube Clickbait Detector web UI...")
+        print(f"{ts} Open http://localhost:4004 in your browser")
         run_server()
         return
 
