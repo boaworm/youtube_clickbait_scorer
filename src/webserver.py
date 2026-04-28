@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 import asyncio
 import json
 from datetime import datetime
@@ -54,22 +55,27 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
 
     try:
         video_id = extract_video_id(url)
+        _t_start = time.monotonic()
         print(f"{_ts()} INFO: [{url}] Processing")
 
         # Clean old cache entries periodically
         await asyncio.to_thread(clean_old_cache, max_entries=10)
 
         # Start both metadata fetching and transcription in parallel
-        print(f"{_ts()} INFO: [{url}] Fetching transcript in background")
+        _t_tx = time.monotonic()
         transcript_task = asyncio.create_task(
             asyncio.to_thread(fetch_transcript, video_id, verbose=False)
         )
         try:
             yield send("status", {"message": "Fetching metadata..."})
+            print(f"{_ts()} INFO: [{url}] Fetching metadata")
+            _t_meta_fetch = time.monotonic()
             metadata = await asyncio.to_thread(fetch_video_metadata, video_id)
+            print(f"{_ts()} INFO: [{url}] Fetching metadata [DONE in {round(time.monotonic() - _t_meta_fetch)} sec]")
 
             # Run metadata analysis
             _meta_bytes = len((metadata['title'] + metadata['description']).encode())
+            _t_meta_llm = time.monotonic()
             print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on metadata ({_meta_bytes} bytes)")
             yield send("status", {"message": "Analyzing metadata..."})
 
@@ -79,6 +85,7 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                 description=metadata['description'],
                 transcript=None
             )
+            print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on metadata [DONE in {round(time.monotonic() - _t_meta_llm)} sec]")
 
             # Send initial result - display immediately
             yield send("initial", {
@@ -100,9 +107,11 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                 # Wait for transcript to complete
                 yield send("status", {"message": "Downloading and transcribing audio..."})
                 transcript = await transcript_task
+                print(f"{_ts()} INFO: [{url}] Fetching transcript in background [DONE in {round(time.monotonic() - _t_tx)} sec]")
 
                 if transcript:
                     _tx_bytes = len((metadata['title'] + metadata['description'] + transcript).encode())
+                    _t_tx_llm = time.monotonic()
                     print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on transcription ({_tx_bytes} bytes)")
                     yield send("status", {"message": "Transcription complete. Analyzing full content..."})
                     # Full analysis with transcript
@@ -112,6 +121,7 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                         description=metadata['description'],
                         transcript=transcript
                     )
+                    print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on transcription [DONE in {round(time.monotonic() - _t_tx_llm)} sec]")
 
                     yield send("transcript", {
                         "score": analysis.clickbait_score,
@@ -121,6 +131,7 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                 else:
                     yield send("error", {"message": "Could not transcribe audio"})
 
+            print(f"{_ts()} INFO: [{url}] Processing [DONE in {round(time.monotonic() - _t_start)} sec]")
             yield send("done", {})
         finally:
             if not transcript_task.done():

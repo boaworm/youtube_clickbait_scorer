@@ -1,6 +1,7 @@
 """Fetch YouTube video data: metadata and transcript with fallback strategies."""
 
 import os
+import time
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -102,7 +103,9 @@ def fetch_transcript(video_id: str, verbose: bool = False) -> Optional[str]:
                 print(f"{_ts()} INFO: [{video_url}] Using cached audio file")
         else:
             print(f"{_ts()} INFO: [{video_url}] Downloading audio")
+            _t = time.monotonic()
             audio_file = download_audio(video_url, cache_dir, output_format="m4a")
+            print(f"{_ts()} INFO: [{video_url}] Downloading audio [DONE in {round(time.monotonic() - _t)} sec]")
 
         if not wav_file.exists():
             if verbose:
@@ -110,7 +113,9 @@ def fetch_transcript(video_id: str, verbose: bool = False) -> Optional[str]:
             convert_audio(audio_file, wav_file)
 
         print(f"{_ts()} INFO: [{video_url}] Transcribing audio")
+        _t = time.monotonic()
         transcript = transcribe(wav_file, model="mlx-community/whisper-large-v3-turbo")
+        print(f"{_ts()} INFO: [{video_url}] Transcribing audio [DONE in {round(time.monotonic() - _t)} sec]")
         transcript_file.write_text(transcript)
 
         if verbose:

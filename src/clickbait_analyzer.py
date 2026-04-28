@@ -35,10 +35,10 @@ def analyze_for_clickbait(
     max_tokens = os.getenv("LLM_MAX_TOKENS")  # Optional - only pass if set
     max_tokens = int(max_tokens) if max_tokens else None
 
-    llm_timeout = float(os.getenv("LLM_TIMEOUT", 120))
+    llm_timeout = float(os.getenv("LLM_TIMEOUT", 300))
 
     # Use OpenAI client for llama.cpp server compatibility
-    client = OpenAI(base_url=base_url, api_key=auth_token, timeout=llm_timeout)
+    client = OpenAI(base_url=base_url, api_key=auth_token, timeout=llm_timeout, max_retries=0)
 
     max_words = int(os.getenv("TRANSCRIPT_MAX_WORDS", 2000))
     if transcript:
