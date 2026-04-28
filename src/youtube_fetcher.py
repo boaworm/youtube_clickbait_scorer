@@ -23,6 +23,34 @@ def get_cache_dir(video_id: str) -> Path:
     return cache_base / video_id
 
 
+def clean_old_cache(max_entries: int = 10):
+    """
+    Clean old cache entries, keeping only the most recent ones.
+
+    Args:
+        max_entries: Maximum number of cache directories to keep
+    """
+    cache_base = Path(__file__).parent.parent / "tmp" / "audio_cache"
+    if not cache_base.exists():
+        return
+
+    # Get all cache directories sorted by modification time (newest first)
+    cache_dirs = sorted(
+        [d for d in cache_base.iterdir() if d.is_dir()],
+        key=lambda d: d.stat().st_mtime,
+        reverse=True
+    )
+
+    # Delete old entries beyond max_entries
+    for old_dir in cache_dirs[max_entries:]:
+        try:
+            import shutil
+            shutil.rmtree(old_dir)
+            print(f"Cleaned old cache: {old_dir.name}")
+        except Exception as e:
+            print(f"Failed to clean {old_dir.name}: {e}")
+
+
 def fetch_video_metadata(video_id: str) -> dict:
     """
     Fetch video metadata using yt-dlp (no API key required).
@@ -38,11 +66,19 @@ def fetch_video_metadata(video_id: str) -> dict:
     # Prefer yt-dlp extraction (always works without API key)
     try:
         info = get_info_ytdlp(f"https://www.youtube.com/watch?v={video_id}")
+        # Check live status - yt-dlp uses multiple fields
+        live_status = info.get("live_status", "")
+        is_live = (
+            live_status == "is_live" or
+            info.get("is_live", False) or
+            info.get("is_upcoming", False)
+        )
         return {
             "title": info.get("title", ""),
             "description": info.get("description", ""),
             "channel_title": info.get("channel", ""),
             "published_at": info.get("publish_date", ""),
+            "is_live": is_live,
         }
     except Exception as e:
         # Fallback to YouTube Data API if available

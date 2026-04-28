@@ -5,15 +5,25 @@ import asyncio
 import json
 from pathlib import Path
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import AsyncGenerator, Optional
 
-from .youtube_fetcher import fetch_video_data, fetch_video_metadata, fetch_transcript, extract_video_id
+from .youtube_fetcher import fetch_video_data, fetch_video_metadata, fetch_transcript, extract_video_id, clean_old_cache
 from .clickbait_analyzer import analyze_for_clickbait
 
 
 app = FastAPI(title="YouTube Clickbait Detector")
+
+# Enable CORS for browser extension and local development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class AnalyzeRequest(BaseModel):
@@ -37,25 +47,26 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
         video_id = extract_video_id(url)
         print(f"INFO: Processing video URL: {url}")
 
-        # Step 1: Fetch metadata
+        # Clean old cache entries periodically
+        clean_old_cache(max_entries=10)
+
+        # Start both metadata fetching and transcription in parallel
+        print("INFO: Invoking NN model for transcription")
+        transcript_task = asyncio.create_task(
+            asyncio.to_thread(fetch_transcript, video_id, verbose=False)
+        )
+
         yield send("status", {"message": "Fetching metadata..."})
         metadata = fetch_video_metadata(video_id)
 
-        # Step 2: Start transcript fetching in parallel with metadata analysis
+        # Run metadata analysis
         print("INFO: Invoking LLM for analysis on metadata")
         yield send("status", {"message": "Analyzing metadata..."})
 
-        # Run metadata analysis
         initial_analysis = analyze_for_clickbait(
             title=metadata['title'],
             description=metadata['description'],
             transcript=None
-        )
-
-        # Start transcript fetching in background
-        print("INFO: Invoking NN model for transcription")
-        transcript_task = asyncio.create_task(
-            asyncio.to_thread(fetch_transcript, video_id, verbose=False)
         )
 
         # Send initial result - display immediately
@@ -63,30 +74,39 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
             "title": metadata['title'],
             "score": initial_analysis.clickbait_score,
             "is_clickbait": initial_analysis.is_clickbait,
-            "reasoning": initial_analysis.reasoning
+            "reasoning": initial_analysis.reasoning,
+            "is_live": metadata.get('is_live', False)
         })
 
-        # Wait for transcript to complete
-        yield send("status", {"message": "Downloading and transcribing audio..."})
-        transcript = await transcript_task
-
-        if transcript:
-            print("INFO: Invoking LLM for analysis on transcription")
-            yield send("status", {"message": "Transcription complete. Analyzing full content..."})
-            # Full analysis with transcript
-            analysis = analyze_for_clickbait(
-                title=metadata['title'],
-                description=metadata['description'],
-                transcript=transcript
-            )
-
+        # Check if live stream - skip transcription
+        if metadata.get('is_live', False):
+            print("INFO: Live stream detected, skipping transcription")
             yield send("transcript", {
-                "score": analysis.clickbait_score,
-                "is_clickbait": analysis.is_clickbait,
-                "reasoning": analysis.reasoning
+                "disabled": True,
+                "reason": "Live stream - transcript unavailable"
             })
         else:
-            yield send("error", {"message": "Could not transcribe audio"})
+            # Wait for transcript to complete
+            yield send("status", {"message": "Downloading and transcribing audio..."})
+            transcript = await transcript_task
+
+            if transcript:
+                print("INFO: Invoking LLM for analysis on transcription")
+                yield send("status", {"message": "Transcription complete. Analyzing full content..."})
+                # Full analysis with transcript
+                analysis = analyze_for_clickbait(
+                    title=metadata['title'],
+                    description=metadata['description'],
+                    transcript=transcript
+                )
+
+                yield send("transcript", {
+                    "score": analysis.clickbait_score,
+                    "is_clickbait": analysis.is_clickbait,
+                    "reasoning": analysis.reasoning
+                })
+            else:
+                yield send("error", {"message": "Could not transcribe audio"})
 
         yield send("done", {})
     except Exception as e:

@@ -46,6 +46,14 @@ def get_video_info(video_url: str) -> dict:
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(video_url, download=False)
+        # Check live status - yt-dlp uses multiple fields
+        live_status = info.get("live_status", "")
+        is_live = (
+            live_status == "is_live" or
+            info.get("is_live", False) or
+            info.get("is_upcoming", False)
+        )
+
         return {
             "title": info.get("title", ""),
             "description": info.get("description", "") or "",
@@ -53,6 +61,7 @@ def get_video_info(video_url: str) -> dict:
             "duration": info.get("duration", 0),
             "view_count": info.get("view_count", 0),
             "publish_date": info.get("upload_date", ""),
+            "is_live": is_live,
         }
 
 
