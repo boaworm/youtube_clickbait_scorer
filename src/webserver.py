@@ -34,9 +34,11 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
         return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
     try:
-        # Step 1: Fetch metadata
+        # Step 1: Fetch metadata only (no transcript)
         yield send("status", {"message": "Fetching metadata..."})
         video_data = fetch_video_data(url, verbose=False)
+        # Clear transcript to force fresh fetch later
+        video_data['transcript'] = None
 
         # Step 2: Initial analysis (metadata only)
         yield send("status", {"message": "Analyzing metadata..."})
@@ -46,7 +48,7 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
             transcript=None
         )
 
-        # Send initial result
+        # Send initial result - display immediately
         yield send("initial", {
             "title": video_data['title'],
             "score": initial_analysis.clickbait_score,
@@ -54,30 +56,13 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
             "reasoning": initial_analysis.reasoning
         })
 
-        # Step 3: Fetch transcript if needed
-        if not video_data['transcript']:
-            yield send("status", {"message": "Downloading and transcribing audio..."})
-            video_data = fetch_video_data(url, verbose=False)
+        # Step 3: Fetch transcript (user can skip before this)
+        yield send("status", {"message": "Downloading and transcribing audio..."})
+        video_data = fetch_video_data(url, verbose=False)
 
-            if video_data['transcript']:
-                yield send("status", {"message": "Transcription complete. Analyzing full content..."})
-                # Step 4: Full analysis with transcript
-                analysis = analyze_for_clickbait(
-                    title=video_data['title'],
-                    description=video_data['description'],
-                    transcript=video_data['transcript']
-                )
-
-                yield send("transcript", {
-                    "score": analysis.clickbait_score,
-                    "is_clickbait": analysis.is_clickbait,
-                    "reasoning": analysis.reasoning
-                })
-            else:
-                yield send("error", {"message": "Could not transcribe audio"})
-        else:
-            # Transcript already available
-            yield send("status", {"message": "Using cached transcript. Analyzing full content..."})
+        if video_data['transcript']:
+            yield send("status", {"message": "Transcription complete. Analyzing full content..."})
+            # Step 4: Full analysis with transcript
             analysis = analyze_for_clickbait(
                 title=video_data['title'],
                 description=video_data['description'],
@@ -89,6 +74,8 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                 "is_clickbait": analysis.is_clickbait,
                 "reasoning": analysis.reasoning
             })
+        else:
+            yield send("error", {"message": "Could not transcribe audio"})
 
         yield send("done", {})
     except Exception as e:
@@ -148,18 +135,35 @@ HTMLContent = """
             padding: 24px;
             border-radius: 12px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            display: none;
             margin-bottom: 20px;
         }
-        .result.show { display: block; }
-        .result h2 { margin-top: 0; }
+        .result h3 { margin-top: 0; color: #555; }
+        #metadata-result { border-left: 4px solid #2196F3; }
+        #full-result { border-left: 4px solid #4CAF50; }
+        .results-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .results-container .result {
+            flex: 1;
+            margin-bottom: 0;
+            min-width: 500px;
+            max-width: 700px;
+        }
+        .results-container .result.empty {
+            opacity: 0.5;
+        }
         .score {
-            font-size: 48px;
+            font-size: 24px;
             font-weight: bold;
             text-align: center;
             padding: 20px;
             border-radius: 8px;
             margin: 20px 0;
+            line-height: 1.4;
         }
         .score.clickbait { background: #ffebee; color: #c62828; }
         .score.safe { background: #e8f5e9; color: #2e7d32; }
@@ -178,17 +182,16 @@ HTMLContent = """
             font-size: 14px;
         }
         .video-link a:hover { text-decoration: underline; }
-        .skip-btn {
-            margin-top: 15px;
-            padding: 8px 16px;
-            font-size: 14px;
-            background: #6c757d;
+            .open-tab-btn {
+            padding: 12px 20px;
+            font-size: 16px;
+            background: #28a745;
             color: white;
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
         }
-        .skip-btn:hover { background: #5a6268; }
+        .open-tab-btn:hover { background: #218838; }
     </style>
 </head>
 <body>
@@ -196,18 +199,21 @@ HTMLContent = """
     <div class="input-group">
         <input type="text" id="url" placeholder="Paste YouTube URL here..." />
         <button onclick="analyze()" id="btn">Clickbait?</button>
-    </div>
-    <div class="video-link" id="videolinkcontainer" style="display:none; margin: 20px 0;">
-        <a id="videolink" href="" target="_blank"></a>
+        <button class="open-tab-btn" onclick="openInNewTab()">Open in new tab</button>
     </div>
     <div id="statuscontainer"></div>
-    <div class="result" id="result">
-        <h2 id="title"></h2>
-        <div class="score" id="score"></div>
-        <div class="reasoning" id="reasoning"></div>
-        <button class="skip-btn" id="skipbtn" onclick="skipTranscription()" style="display:none;">
-            Skip transcription - use this result
-        </button>
+    <div class="results-container">
+        <div class="result" id="metadata-result">
+            <h2 id="title"></h2>
+            <h3>Metadata Analysis</h3>
+            <div class="score" id="metadata-score">Waiting for data...</div>
+            <div class="reasoning" id="metadata-reasoning"></div>
+        </div>
+        <div class="result" id="full-result">
+            <h3>Full Analysis (with transcript)</h3>
+            <div class="score" id="full-score">Waiting for transcript...</div>
+            <div class="reasoning" id="full-reasoning"></div>
+        </div>
     </div>
     <script>
         let controller = null;
@@ -217,35 +223,42 @@ HTMLContent = """
                 '<div class="status">' + msg + '</div>';
         }
 
-        function showResult(title, score, isClickbait, reasoning) {
+        function showMetadataResult(title, score, isClickbait, reasoning) {
             document.getElementById('title').textContent = title;
-            const scoreEl = document.getElementById('score');
-            scoreEl.textContent = score + '% ' + (isClickbait ? 'CLICKBAIT' : 'NOT CLICKBAIT');
+            const scoreEl = document.getElementById('metadata-score');
+            scoreEl.textContent = (isClickbait ? 'CLICKBAIT' : 'NOT CLICKBAIT') + ' (' + score + '/100 pts)';
             scoreEl.className = 'score ' + (isClickbait ? 'clickbait' : 'safe');
-            document.getElementById('reasoning').textContent = reasoning;
-            document.getElementById('result').classList.add('show');
+            document.getElementById('metadata-reasoning').textContent = reasoning;
+            document.getElementById('metadata-result').classList.remove('empty');
+        }
+
+        function showFullResult(score, isClickbait, reasoning, initialScore) {
+            const scoreEl = document.getElementById('full-score');
+            scoreEl.textContent = (isClickbait ? 'CLICKBAIT' : 'NOT CLICKBAIT') + ' (' + score + '/100 pts)';
+            scoreEl.className = 'score ' + (isClickbait ? 'clickbait' : 'safe');
+            document.getElementById('full-reasoning').textContent = reasoning;
+            document.getElementById('full-result').classList.remove('empty');
         }
 
         async function analyze() {
             const url = document.getElementById('url').value;
             const btn = document.getElementById('btn');
-            const linkContainer = document.getElementById('videolinkcontainer');
-            const linkEl = document.getElementById('videolink');
 
             if (!url) { alert('Please enter a URL'); return; }
+
+            console.log('INFO: Analyzing video:', url);
 
             // Cancel any existing request
             if (controller) controller.abort();
             controller = new AbortController();
 
-            document.getElementById('skipbtn').style.display = 'none';
-
-            linkEl.href = url;
-            linkEl.textContent = url;
-            linkContainer.style.display = 'block';
-
             btn.disabled = true;
-            document.getElementById('result').classList.remove('show');
+            document.getElementById('metadata-result').classList.add('empty');
+            document.getElementById('full-result').classList.add('empty');
+            document.getElementById('metadata-score').textContent = 'Waiting for data...';
+            document.getElementById('full-score').textContent = 'Waiting for transcript...';
+            document.getElementById('metadata-reasoning').textContent = '';
+            document.getElementById('full-reasoning').textContent = '';
             updateStatus('Connecting...');
 
             try {
@@ -294,11 +307,11 @@ HTMLContent = """
                                 if (event === 'status') {
                                     updateStatus(jsonData.message);
                                 } else if (event === 'initial') {
-                                    showResult(jsonData.title, jsonData.score, jsonData.is_clickbait, jsonData.reasoning);
-                                    document.getElementById('skipbtn').style.display = 'inline-block';
+                                    showMetadataResult(jsonData.title, jsonData.score, jsonData.is_clickbait, jsonData.reasoning);
                                 } else if (event === 'transcript') {
-                                    showResult(document.getElementById('title').textContent, jsonData.score, jsonData.is_clickbait, jsonData.reasoning);
-                                    document.getElementById('skipbtn').style.display = 'none';
+                                    const initialScore = document.getElementById('metadata-score').textContent.match(/\d+/);
+                                    const initialScoreValue = initialScore ? initialScore[0] : '?';
+                                    showFullResult(jsonData.score, jsonData.is_clickbait, jsonData.reasoning, initialScoreValue);
                                     updateStatus('');
                                 } else if (event === 'error') {
                                     updateStatus('Error: ' + jsonData.message);
@@ -322,11 +335,11 @@ HTMLContent = """
             }
         }
 
-        function skipTranscription() {
-            if (controller) controller.abort();
-            document.getElementById('skipbtn').style.display = 'none';
-            updateStatus('Using metadata-only analysis');
-            document.getElementById('btn').disabled = false;
+        function openInNewTab() {
+            const url = document.getElementById('url').value;
+            if (url) {
+                window.open(url, '_blank');
+            }
         }
 
         document.getElementById('url').addEventListener('keypress', (e) => {

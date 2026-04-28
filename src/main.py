@@ -86,7 +86,8 @@ def main():
             print(f"Transcription score: {analysis.clickbait_score}% clickbait")
 
             print("\n" + "-" * 35)
-            print(f"Analysis: {'CLICKBAIT' if analysis.is_clickbait else 'NOT CLICKBAIT'} ({analysis.clickbait_score}%)")
+            verdict = 'CLICKBAIT' if analysis.is_clickbait else 'NOT CLICKBAIT'
+            print(f"Analysis: {verdict} ({analysis.clickbait_score}/100 pts)")
             print()
             print(analysis.reasoning)
 
