@@ -1,9 +1,14 @@
 """Simple web UI for YouTube clickbait analysis."""
 
 import os
+import sys
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
+
+# Force line-buffered stdout so prints appear immediately when piped (e.g. | tee)
+sys.stdout.reconfigure(line_buffering=True)
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -11,6 +16,10 @@ from pydantic import BaseModel
 from typing import AsyncGenerator, Optional
 
 from .youtube_fetcher import fetch_video_data, fetch_video_metadata, fetch_transcript, extract_video_id, clean_old_cache
+
+
+def _ts():
+    return datetime.now().strftime("[%H:%M:%S]")
 from .clickbait_analyzer import analyze_for_clickbait
 
 
@@ -45,71 +54,77 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
 
     try:
         video_id = extract_video_id(url)
-        print(f"INFO: Processing video URL: {url}")
+        print(f"{_ts()} INFO: [{url}] Processing")
 
         # Clean old cache entries periodically
-        clean_old_cache(max_entries=10)
+        await asyncio.to_thread(clean_old_cache, max_entries=10)
 
         # Start both metadata fetching and transcription in parallel
-        print("INFO: Invoking NN model for transcription")
+        print(f"{_ts()} INFO: [{url}] Fetching transcript in background")
         transcript_task = asyncio.create_task(
             asyncio.to_thread(fetch_transcript, video_id, verbose=False)
         )
+        try:
+            yield send("status", {"message": "Fetching metadata..."})
+            metadata = await asyncio.to_thread(fetch_video_metadata, video_id)
 
-        yield send("status", {"message": "Fetching metadata..."})
-        metadata = fetch_video_metadata(video_id)
+            # Run metadata analysis
+            print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on metadata")
+            yield send("status", {"message": "Analyzing metadata..."})
 
-        # Run metadata analysis
-        print("INFO: Invoking LLM for analysis on metadata")
-        yield send("status", {"message": "Analyzing metadata..."})
+            initial_analysis = await asyncio.to_thread(
+                analyze_for_clickbait,
+                title=metadata['title'],
+                description=metadata['description'],
+                transcript=None
+            )
 
-        initial_analysis = analyze_for_clickbait(
-            title=metadata['title'],
-            description=metadata['description'],
-            transcript=None
-        )
-
-        # Send initial result - display immediately
-        yield send("initial", {
-            "title": metadata['title'],
-            "score": initial_analysis.clickbait_score,
-            "is_clickbait": initial_analysis.is_clickbait,
-            "reasoning": initial_analysis.reasoning,
-            "is_live": metadata.get('is_live', False)
-        })
-
-        # Check if live stream - skip transcription
-        if metadata.get('is_live', False):
-            print("INFO: Live stream detected, skipping transcription")
-            yield send("transcript", {
-                "disabled": True,
-                "reason": "Live stream - transcript unavailable"
+            # Send initial result - display immediately
+            yield send("initial", {
+                "title": metadata['title'],
+                "score": initial_analysis.clickbait_score,
+                "is_clickbait": initial_analysis.is_clickbait,
+                "reasoning": initial_analysis.reasoning,
+                "is_live": metadata.get('is_live', False)
             })
-        else:
-            # Wait for transcript to complete
-            yield send("status", {"message": "Downloading and transcribing audio..."})
-            transcript = await transcript_task
 
-            if transcript:
-                print("INFO: Invoking LLM for analysis on transcription")
-                yield send("status", {"message": "Transcription complete. Analyzing full content..."})
-                # Full analysis with transcript
-                analysis = analyze_for_clickbait(
-                    title=metadata['title'],
-                    description=metadata['description'],
-                    transcript=transcript
-                )
-
+            # Check if live stream - skip transcription
+            if metadata.get('is_live', False):
+                print(f"{_ts()} INFO: [{url}] Live stream detected, skipping transcription")
                 yield send("transcript", {
-                    "score": analysis.clickbait_score,
-                    "is_clickbait": analysis.is_clickbait,
-                    "reasoning": analysis.reasoning
+                    "disabled": True,
+                    "reason": "Live stream - transcript unavailable"
                 })
             else:
-                yield send("error", {"message": "Could not transcribe audio"})
+                # Wait for transcript to complete
+                yield send("status", {"message": "Downloading and transcribing audio..."})
+                transcript = await transcript_task
 
-        yield send("done", {})
+                if transcript:
+                    print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on transcription")
+                    yield send("status", {"message": "Transcription complete. Analyzing full content..."})
+                    # Full analysis with transcript
+                    analysis = await asyncio.to_thread(
+                        analyze_for_clickbait,
+                        title=metadata['title'],
+                        description=metadata['description'],
+                        transcript=transcript
+                    )
+
+                    yield send("transcript", {
+                        "score": analysis.clickbait_score,
+                        "is_clickbait": analysis.is_clickbait,
+                        "reasoning": analysis.reasoning
+                    })
+                else:
+                    yield send("error", {"message": "Could not transcribe audio"})
+
+            yield send("done", {})
+        finally:
+            if not transcript_task.done():
+                transcript_task.cancel()
     except Exception as e:
+        print(f"{_ts()} ERROR: [{url}] {type(e).__name__}: {e}")
         yield send("error", {"message": str(e)})
 
 
@@ -340,7 +355,7 @@ HTMLContent = """
                                 } else if (event === 'initial') {
                                     showMetadataResult(jsonData.title, jsonData.score, jsonData.is_clickbait, jsonData.reasoning);
                                 } else if (event === 'transcript') {
-                                    const initialScore = document.getElementById('metadata-score').textContent.match(/\d+/);
+                                    const initialScore = document.getElementById('metadata-score').textContent.match(/\\d+/);
                                     const initialScoreValue = initialScore ? initialScore[0] : '?';
                                     showFullResult(jsonData.score, jsonData.is_clickbait, jsonData.reasoning, initialScoreValue);
                                     updateStatus('');
@@ -382,7 +397,35 @@ HTMLContent = """
 """
 
 
+_UVICORN_LOG_CONFIG = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "()": "uvicorn.logging.DefaultFormatter",
+            "fmt": "[%(asctime)s] %(levelprefix)s %(message)s",
+            "datefmt": "%H:%M:%S",
+            "use_colors": None,
+        },
+        "access": {
+            "()": "uvicorn.logging.AccessFormatter",
+            "fmt": '[%(asctime)s] %(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s',
+            "datefmt": "%H:%M:%S",
+        },
+    },
+    "handlers": {
+        "default": {"formatter": "default", "class": "logging.StreamHandler", "stream": "ext://sys.stderr"},
+        "access": {"formatter": "access", "class": "logging.StreamHandler", "stream": "ext://sys.stdout"},
+    },
+    "loggers": {
+        "uvicorn": {"handlers": ["default"], "level": "INFO", "propagate": False},
+        "uvicorn.error": {"level": "INFO"},
+        "uvicorn.access": {"handlers": ["access"], "level": "INFO", "propagate": False},
+    },
+}
+
+
 def run_server(host: str = "0.0.0.0", port: int = 4004):
     """Run the web server."""
     import uvicorn
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, log_config=_UVICORN_LOG_CONFIG)

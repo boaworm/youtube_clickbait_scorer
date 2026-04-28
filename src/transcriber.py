@@ -1,11 +1,14 @@
 """Transcribe audio files using MLX Whisper (Apple Silicon optimized)."""
 
+import os
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables for HF token
 load_dotenv()
+
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
 import mlx_whisper
 

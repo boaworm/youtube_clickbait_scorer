@@ -3,7 +3,6 @@
 
 const DEFAULT_BACKEND_URL = 'http://localhost:4004';
 
-let currentController = null;
 let isPanelInjected = false;
 
 function getBackendUrl() {
@@ -67,32 +66,43 @@ function injectButtonsOnThumbnails() {
   console.log('[Clickbait] Found', videos.length, 'video thumbnails');
 
   videos.forEach(video => {
-    if (!video.querySelector('.cdp-results-inline')) {
-      // Create results container
-      const resultsDiv = document.createElement('div');
-      resultsDiv.className = 'cdp-results-inline';
-      resultsDiv.innerHTML = `
-        <button class="cdp-thumb-btn">Clickbait?</button>
-        <span class="cdp-result cdp-metadata-result">Metadata: --</span>
-        <span class="cdp-result cdp-full-result">Transcript: --</span>
-      `;
+    const currentVideoId = getVideoIdFromElement(video);
+    const existingDiv = video.querySelector('.cdp-results-inline');
 
-      // Insert at the top of the video renderer to avoid being covered
-      video.insertBefore(resultsDiv, video.firstChild);
-
-      // Add click handler
-      const button = resultsDiv.querySelector('.cdp-thumb-btn');
-      button.addEventListener('click', () => {
-        const videoId = getVideoIdFromElement(video);
-        const videoUrl = getVideoUrlFromElement(video);
-        if (videoId && videoUrl) {
-          console.log('[Clickbait] Analyzing:', videoUrl);
-          handleAnalyzeInline(videoUrl, resultsDiv);
-        } else {
-          console.log('[Clickbait] Could not extract video ID');
-        }
-      });
+    if (existingDiv) {
+      // If YouTube reused this renderer for a different video, clear stale results
+      if (existingDiv.dataset.videoId && existingDiv.dataset.videoId !== currentVideoId) {
+        existingDiv.remove();
+      } else {
+        return;
+      }
     }
+
+    // Create results container
+    const resultsDiv = document.createElement('div');
+    resultsDiv.className = 'cdp-results-inline';
+    resultsDiv.dataset.videoId = currentVideoId || '';
+    resultsDiv.innerHTML = `
+      <button class="cdp-thumb-btn">Clickbait?</button>
+      <span class="cdp-result cdp-metadata-result">Metadata: --</span>
+      <span class="cdp-result cdp-full-result">Transcript: --</span>
+    `;
+
+    // Insert at the top of the video renderer to avoid being covered
+    video.insertBefore(resultsDiv, video.firstChild);
+
+    // Add click handler
+    const button = resultsDiv.querySelector('.cdp-thumb-btn');
+    button.addEventListener('click', () => {
+      const videoId = getVideoIdFromElement(video);
+      const videoUrl = getVideoUrlFromElement(video);
+      if (videoId && videoUrl) {
+        console.log('[Clickbait] Analyzing:', videoUrl);
+        handleAnalyzeInline(videoUrl, resultsDiv);
+      } else {
+        console.log('[Clickbait] Could not extract video ID');
+      }
+    });
   });
 }
 
@@ -104,7 +114,7 @@ function injectWatchPanel() {
   if (!anchor || !anchor.parentNode) return;
 
   const resultsDiv = document.createElement('div');
-  resultsDiv.className = 'cdp-results-inline';
+  resultsDiv.className = 'cdp-results-inline cdp-watch-panel';
   resultsDiv.innerHTML = `
     <button class="cdp-thumb-btn">Clickbait?</button>
     <span class="cdp-result cdp-metadata-result">Metadata: --</span>
@@ -137,11 +147,11 @@ async function handleAnalyzeInline(url, resultsDiv) {
 
   console.log('INFO: Analyzing video:', url);
 
-  // Cancel any existing request
-  if (currentController) {
-    currentController.abort();
+  // Cancel any in-flight request for this specific thumbnail (re-click)
+  if (resultsDiv._abortController) {
+    resultsDiv._abortController.abort();
   }
-  currentController = new AbortController();
+  resultsDiv._abortController = new AbortController();
 
   try {
     const backendUrl = await getBackendUrl();
@@ -149,7 +159,7 @@ async function handleAnalyzeInline(url, resultsDiv) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
-      signal: currentController.signal
+      signal: resultsDiv._abortController.signal
     });
 
     if (!response.ok) {
@@ -245,6 +255,13 @@ function setupObserver() {
 
   observer.observe(document.body, { childList: true, subtree: true });
 }
+
+// On YouTube SPA navigation, clear stale watch panel and re-inject
+window.addEventListener('yt-navigate-finish', () => {
+  document.querySelectorAll('.cdp-watch-panel').forEach(el => el.remove());
+  isPanelInjected = false;
+  injectPanel();
+});
 
 // Initialize
 console.log('[Clickbait] Content script loaded, videoId:', getVideoId());
