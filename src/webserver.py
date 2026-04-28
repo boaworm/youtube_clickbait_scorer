@@ -55,60 +55,63 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
         transcript_task = asyncio.create_task(
             asyncio.to_thread(fetch_transcript, video_id, verbose=False)
         )
+        try:
+            yield send("status", {"message": "Fetching metadata..."})
+            metadata = fetch_video_metadata(video_id)
 
-        yield send("status", {"message": "Fetching metadata..."})
-        metadata = fetch_video_metadata(video_id)
+            # Run metadata analysis
+            print("INFO: Invoking LLM for analysis on metadata")
+            yield send("status", {"message": "Analyzing metadata..."})
 
-        # Run metadata analysis
-        print("INFO: Invoking LLM for analysis on metadata")
-        yield send("status", {"message": "Analyzing metadata..."})
+            initial_analysis = analyze_for_clickbait(
+                title=metadata['title'],
+                description=metadata['description'],
+                transcript=None
+            )
 
-        initial_analysis = analyze_for_clickbait(
-            title=metadata['title'],
-            description=metadata['description'],
-            transcript=None
-        )
-
-        # Send initial result - display immediately
-        yield send("initial", {
-            "title": metadata['title'],
-            "score": initial_analysis.clickbait_score,
-            "is_clickbait": initial_analysis.is_clickbait,
-            "reasoning": initial_analysis.reasoning,
-            "is_live": metadata.get('is_live', False)
-        })
-
-        # Check if live stream - skip transcription
-        if metadata.get('is_live', False):
-            print("INFO: Live stream detected, skipping transcription")
-            yield send("transcript", {
-                "disabled": True,
-                "reason": "Live stream - transcript unavailable"
+            # Send initial result - display immediately
+            yield send("initial", {
+                "title": metadata['title'],
+                "score": initial_analysis.clickbait_score,
+                "is_clickbait": initial_analysis.is_clickbait,
+                "reasoning": initial_analysis.reasoning,
+                "is_live": metadata.get('is_live', False)
             })
-        else:
-            # Wait for transcript to complete
-            yield send("status", {"message": "Downloading and transcribing audio..."})
-            transcript = await transcript_task
 
-            if transcript:
-                print("INFO: Invoking LLM for analysis on transcription")
-                yield send("status", {"message": "Transcription complete. Analyzing full content..."})
-                # Full analysis with transcript
-                analysis = analyze_for_clickbait(
-                    title=metadata['title'],
-                    description=metadata['description'],
-                    transcript=transcript
-                )
-
+            # Check if live stream - skip transcription
+            if metadata.get('is_live', False):
+                print("INFO: Live stream detected, skipping transcription")
                 yield send("transcript", {
-                    "score": analysis.clickbait_score,
-                    "is_clickbait": analysis.is_clickbait,
-                    "reasoning": analysis.reasoning
+                    "disabled": True,
+                    "reason": "Live stream - transcript unavailable"
                 })
             else:
-                yield send("error", {"message": "Could not transcribe audio"})
+                # Wait for transcript to complete
+                yield send("status", {"message": "Downloading and transcribing audio..."})
+                transcript = await transcript_task
 
-        yield send("done", {})
+                if transcript:
+                    print("INFO: Invoking LLM for analysis on transcription")
+                    yield send("status", {"message": "Transcription complete. Analyzing full content..."})
+                    # Full analysis with transcript
+                    analysis = analyze_for_clickbait(
+                        title=metadata['title'],
+                        description=metadata['description'],
+                        transcript=transcript
+                    )
+
+                    yield send("transcript", {
+                        "score": analysis.clickbait_score,
+                        "is_clickbait": analysis.is_clickbait,
+                        "reasoning": analysis.reasoning
+                    })
+                else:
+                    yield send("error", {"message": "Could not transcribe audio"})
+
+            yield send("done", {})
+        finally:
+            if not transcript_task.done():
+                transcript_task.cancel()
     except Exception as e:
         yield send("error", {"message": str(e)})
 
