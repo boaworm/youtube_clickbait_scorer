@@ -4,6 +4,8 @@ Analyzes YouTube videos to determine if titles make claims not substantiated
 by the actual content (e.g., "Leak confirmed" when the video only contains
 speculation).
 
+![Browser extension analyzing multiple videos](screenshots/youtube_multi.png)
+
 ## Quick Start
 
 ```bash
@@ -179,10 +181,6 @@ The UI provides:
 **Browser extension on YouTube:**
 
 ![Browser extension](screenshots/youtube_com.png)
-
-**Browser extension analyzing multiple videos:**
-
-![Multiple video analysis](screenshots/youtube_multi.png)
 
 API endpoint:
 ```bash
