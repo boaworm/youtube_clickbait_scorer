@@ -189,6 +189,28 @@ curl -X POST http://localhost:4004/analyze \
   -d '{"url":"https://www.youtube.com/watch?v=VIDEO_ID"}'
 ```
 
+## Browser Extension
+
+The extension integrates the detector directly into YouTube, adding a "Clickbait?" button on video thumbnails and the watch page.
+
+### Installation
+
+1. Open `chrome://extensions` in Chrome (or `edge://extensions` in Edge)
+2. Enable **Developer mode** (top-right toggle)
+3. Click **Load unpacked** and select the `extension/` folder
+
+### Configuring the Backend URL
+
+By default the extension points to `http://localhost:4004` (the local server started with `--webserver`). To point it at a remote server:
+
+1. Right-click the extension icon → **Options**, or go to `chrome://extensions` → **Details** → **Extension options**
+2. Enter the full base URL of your backend, e.g. `https://clickbait.example.com`
+3. Click **Save**
+
+The setting is synced across Chrome profiles via `chrome.storage.sync`.
+
+> **Note:** The server must be reachable from the browser and serve HTTPS if YouTube is loaded over HTTPS (mixed-content rules apply in Chrome). For local use, `http://localhost:4004` works fine.
+
 ## Troubleshooting
 
 ### "Numpy is not available" error

@@ -1,8 +1,18 @@
 // YouTube Clickbait Detector - Content Script
 // Runs on YouTube pages, injects UI and handles user interactions
 
+const DEFAULT_BACKEND_URL = 'http://localhost:4004';
+
 let currentController = null;
 let isPanelInjected = false;
+
+function getBackendUrl() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['backendUrl'], (result) => {
+      resolve(result.backendUrl || DEFAULT_BACKEND_URL);
+    });
+  });
+}
 
 // Detect video ID from current URL
 function getVideoId() {
@@ -157,7 +167,8 @@ async function handleAnalyzeInline(url, resultsDiv) {
   currentController = new AbortController();
 
   try {
-    const response = await fetch('http://localhost:4004/analyze-stream', {
+    const backendUrl = await getBackendUrl();
+    const response = await fetch(backendUrl + '/analyze-stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
@@ -263,7 +274,8 @@ async function handleAnalyze(url) {
   currentController = new AbortController();
 
   try {
-    const response = await fetch('http://localhost:4004/analyze-stream', {
+    const backendUrl = await getBackendUrl();
+    const response = await fetch(backendUrl + '/analyze-stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),

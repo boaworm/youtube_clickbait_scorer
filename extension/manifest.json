@@ -4,7 +4,11 @@
   "version": "1.0.0",
   "description": "Analyze YouTube videos for clickbait titles vs content",
   "permissions": ["activeTab", "storage"],
-  "host_permissions": ["http://localhost:4004/*"],
+  "host_permissions": ["*://*/*"],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
   "content_scripts": [
     {
       "matches": ["*://*.youtube.com/*"],
