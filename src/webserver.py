@@ -7,9 +7,9 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
-from .youtube_fetcher import fetch_video_data
+from .youtube_fetcher import fetch_video_data, fetch_video_metadata, fetch_transcript, extract_video_id
 from .clickbait_analyzer import analyze_for_clickbait
 
 
@@ -34,39 +34,50 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
         return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
     try:
-        # Step 1: Fetch metadata only (no transcript)
-        yield send("status", {"message": "Fetching metadata..."})
-        video_data = fetch_video_data(url, verbose=False)
-        # Clear transcript to force fresh fetch later
-        video_data['transcript'] = None
+        video_id = extract_video_id(url)
+        print(f"INFO: Processing video URL: {url}")
 
-        # Step 2: Initial analysis (metadata only)
+        # Step 1: Fetch metadata
+        yield send("status", {"message": "Fetching metadata..."})
+        metadata = fetch_video_metadata(video_id)
+
+        # Step 2: Start transcript fetching in parallel with metadata analysis
+        print("INFO: Invoking LLM for analysis on metadata")
         yield send("status", {"message": "Analyzing metadata..."})
+
+        # Run metadata analysis
         initial_analysis = analyze_for_clickbait(
-            title=video_data['title'],
-            description=video_data['description'],
+            title=metadata['title'],
+            description=metadata['description'],
             transcript=None
+        )
+
+        # Start transcript fetching in background
+        print("INFO: Invoking NN model for transcription")
+        transcript_task = asyncio.create_task(
+            asyncio.to_thread(fetch_transcript, video_id, verbose=False)
         )
 
         # Send initial result - display immediately
         yield send("initial", {
-            "title": video_data['title'],
+            "title": metadata['title'],
             "score": initial_analysis.clickbait_score,
             "is_clickbait": initial_analysis.is_clickbait,
             "reasoning": initial_analysis.reasoning
         })
 
-        # Step 3: Fetch transcript (user can skip before this)
+        # Wait for transcript to complete
         yield send("status", {"message": "Downloading and transcribing audio..."})
-        video_data = fetch_video_data(url, verbose=False)
+        transcript = await transcript_task
 
-        if video_data['transcript']:
+        if transcript:
+            print("INFO: Invoking LLM for analysis on transcription")
             yield send("status", {"message": "Transcription complete. Analyzing full content..."})
-            # Step 4: Full analysis with transcript
+            # Full analysis with transcript
             analysis = analyze_for_clickbait(
-                title=video_data['title'],
-                description=video_data['description'],
-                transcript=video_data['transcript']
+                title=metadata['title'],
+                description=metadata['description'],
+                transcript=transcript
             )
 
             yield send("transcript", {
