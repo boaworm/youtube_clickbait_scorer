@@ -11,7 +11,8 @@ def download_audio(
     video_url: str,
     output_dir: Path,
     output_format: str = "m4a",
-    timeout: int = 300
+    timeout: int = 300,
+    max_seconds: int = 600,
 ) -> Optional[Path]:
     """
     Download audio-only from YouTube using yt-dlp.
@@ -44,6 +45,8 @@ def download_audio(
         'progress_hooks': [],
         'timeout': timeout,
         'restrictfilenames': True,  # Use safe filenames (no Unicode chars)
+        'download_ranges': yt_dlp.utils.download_range_func(None, [(0, max_seconds)]),
+        'force_keyframes_at_cuts': True,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': output_format,

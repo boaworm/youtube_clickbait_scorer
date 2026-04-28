@@ -35,10 +35,19 @@ def analyze_for_clickbait(
     max_tokens = os.getenv("LLM_MAX_TOKENS")  # Optional - only pass if set
     max_tokens = int(max_tokens) if max_tokens else None
 
-    # Use OpenAI client for llama.cpp server compatibility
-    client = OpenAI(base_url=base_url, api_key=auth_token)
+    llm_timeout = float(os.getenv("LLM_TIMEOUT", 120))
 
-    content_section = transcript if transcript else "No transcript available"
+    # Use OpenAI client for llama.cpp server compatibility
+    client = OpenAI(base_url=base_url, api_key=auth_token, timeout=llm_timeout)
+
+    max_words = int(os.getenv("TRANSCRIPT_MAX_WORDS", 2000))
+    if transcript:
+        words = transcript.split()
+        if len(words) > max_words:
+            transcript = " ".join(words[:max_words]) + " [transcript truncated]"
+        content_section = transcript
+    else:
+        content_section = "No transcript available"
 
     system_prompt = """You are a YouTube clickbait detector. Your job is to analyze whether a video's title makes claims that the video content does not substantiate.
 

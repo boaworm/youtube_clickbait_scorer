@@ -69,7 +69,8 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
             metadata = await asyncio.to_thread(fetch_video_metadata, video_id)
 
             # Run metadata analysis
-            print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on metadata")
+            _meta_bytes = len((metadata['title'] + metadata['description']).encode())
+            print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on metadata ({_meta_bytes} bytes)")
             yield send("status", {"message": "Analyzing metadata..."})
 
             initial_analysis = await asyncio.to_thread(
@@ -101,7 +102,8 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                 transcript = await transcript_task
 
                 if transcript:
-                    print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on transcription")
+                    _tx_bytes = len((metadata['title'] + metadata['description'] + transcript).encode())
+                    print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on transcription ({_tx_bytes} bytes)")
                     yield send("status", {"message": "Transcription complete. Analyzing full content..."})
                     # Full analysis with transcript
                     analysis = await asyncio.to_thread(
