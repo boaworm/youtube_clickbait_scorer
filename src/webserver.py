@@ -12,7 +12,7 @@ from pathlib import Path
 sys.stdout.reconfigure(line_buffering=True)
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import AsyncGenerator, Optional
 
@@ -22,6 +22,34 @@ from .youtube_fetcher import fetch_video_data, fetch_video_metadata, fetch_trans
 def _ts():
     return datetime.now().strftime("[%H:%M:%S]")
 from .clickbait_analyzer import analyze_for_clickbait
+
+
+_CACHE_PATH = Path(__file__).parent.parent / "tmp" / "result_cache.json"
+
+
+class _ResultCache:
+    def __init__(self, path: Path):
+        self._path = path
+        self._data: dict = {}
+        self._load()
+
+    def _load(self):
+        if self._path.exists():
+            try:
+                self._data = json.loads(self._path.read_text())
+            except Exception:
+                self._data = {}
+
+    def get(self, video_id: str) -> Optional[dict]:
+        return self._data.get(video_id)
+
+    def set(self, video_id: str, result: dict):
+        self._data[video_id] = result
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps(self._data, indent=2))
+
+
+_cache = _ResultCache(_CACHE_PATH)
 
 
 app = FastAPI(title="YouTube Clickbait Detector")
@@ -47,6 +75,15 @@ async def root():
     return HTMLResponse(content=HTMLContent)
 
 
+@app.get("/cache/{video_id}")
+async def get_cache(video_id: str):
+    """Return cached analysis result for a video ID, or 404 if not cached."""
+    result = _cache.get(video_id)
+    if result is None:
+        return JSONResponse(status_code=404, content={"error": "not cached"})
+    return JSONResponse(content=result)
+
+
 async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
     """Stream analysis progress as JSON lines."""
 
@@ -60,6 +97,9 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
 
         # Clean old cache entries periodically
         await asyncio.to_thread(clean_old_cache, max_entries=10)
+
+        # Accumulated cache entry built up as results arrive
+        cache_entry: dict = {}
 
         # Start both metadata fetching and transcription in parallel
         _t_tx = time.monotonic()
@@ -86,6 +126,9 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                 transcript=None
             )
             print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on metadata [DONE in {round(time.monotonic() - _t_meta_llm)} sec]")
+
+            cache_entry["metadata_score"] = initial_analysis.clickbait_score
+            cache_entry["metadata_argument"] = initial_analysis.reasoning
 
             # Send initial result - display immediately
             yield send("initial", {
@@ -123,6 +166,9 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                     )
                     print(f"{_ts()} INFO: [{url}] Invoking LLM for analysis on transcription [DONE in {round(time.monotonic() - _t_tx_llm)} sec]")
 
+                    cache_entry["transcript_score"] = analysis.clickbait_score
+                    cache_entry["transcript_argument"] = analysis.reasoning
+
                     yield send("transcript", {
                         "score": analysis.clickbait_score,
                         "is_clickbait": analysis.is_clickbait,
@@ -130,6 +176,10 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                     })
                 else:
                     yield send("error", {"message": "Could not transcribe audio"})
+
+            # Persist to cache if we have at least the metadata result
+            if "metadata_score" in cache_entry:
+                _cache.set(video_id, cache_entry)
 
             print(f"{_ts()} INFO: [{url}] Processing [DONE in {round(time.monotonic() - _t_start)} sec]")
             yield send("done", {})

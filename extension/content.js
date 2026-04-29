@@ -7,9 +7,13 @@ let isPanelInjected = false;
 
 function getBackendUrl() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(['backendUrl'], (result) => {
-      resolve(result.backendUrl || DEFAULT_BACKEND_URL);
-    });
+    try {
+      chrome.storage.sync.get(['backendUrl'], (result) => {
+        resolve((result && result.backendUrl) || DEFAULT_BACKEND_URL);
+      });
+    } catch (e) {
+      resolve(DEFAULT_BACKEND_URL);
+    }
   });
 }
 
@@ -49,6 +53,43 @@ function getVideoUrlFromElement(el) {
     return link.href;
   }
   return null;
+}
+
+// Populate resultsDiv from a cache entry object
+function applyCacheResult(resultsDiv, cached) {
+  const metadataResult = resultsDiv.querySelector('.cdp-metadata-result');
+  const fullResult = resultsDiv.querySelector('.cdp-full-result');
+
+  if (cached.metadata_score !== undefined) {
+    const isClickbait = cached.metadata_score >= 50;
+    metadataResult.textContent = 'Metadata: ' + (isClickbait ? 'CLICKBAIT' : 'OK') + ' (' + cached.metadata_score + '/100)';
+    metadataResult.className = 'cdp-result cdp-metadata-result ' + (isClickbait ? 'cdp-bad' : 'cdp-good');
+    metadataResult.title = cached.metadata_argument || '';
+    metadataResult.dataset.reasoning = cached.metadata_argument || '';
+  }
+
+  if (cached.transcript_score !== undefined) {
+    const isClickbait = cached.transcript_score >= 50;
+    fullResult.textContent = 'Transcript: ' + (isClickbait ? 'CLICKBAIT' : 'OK') + ' (' + cached.transcript_score + '/100)';
+    fullResult.className = 'cdp-result cdp-full-result ' + (isClickbait ? 'cdp-bad' : 'cdp-good');
+    fullResult.title = cached.transcript_argument || '';
+    fullResult.dataset.reasoning = cached.transcript_argument || '';
+  }
+}
+
+// Check server cache for a video ID and populate resultsDiv if found
+async function checkCache(videoId, resultsDiv) {
+  if (!videoId) return;
+  try {
+    const backendUrl = await getBackendUrl();
+    const response = await fetch(backendUrl + '/cache/' + videoId);
+    if (response.ok) {
+      const cached = await response.json();
+      applyCacheResult(resultsDiv, cached);
+    }
+  } catch (err) {
+    // Cache miss or network error — silently ignore
+  }
 }
 
 // Inject click button and result indicators on video thumbnails
@@ -91,6 +132,9 @@ function injectButtonsOnThumbnails() {
     // Insert at the top of the video renderer to avoid being covered
     video.insertBefore(resultsDiv, video.firstChild);
 
+    // Populate from cache if available
+    checkCache(currentVideoId, resultsDiv);
+
     // Add click handler
     const button = resultsDiv.querySelector('.cdp-thumb-btn');
     button.addEventListener('click', () => {
@@ -124,6 +168,9 @@ function injectWatchPanel() {
   anchor.parentNode.insertBefore(resultsDiv, anchor);
   console.log('[Clickbait] Watch inline icons injected');
   isPanelInjected = true;
+
+  // Populate from cache if available
+  checkCache(getVideoId(), resultsDiv);
 
   const button = resultsDiv.querySelector('.cdp-thumb-btn');
   button.addEventListener('click', () => handleAnalyzeInline(getVideoUrl(), resultsDiv));
