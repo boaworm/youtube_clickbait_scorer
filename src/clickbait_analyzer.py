@@ -49,7 +49,8 @@ def analyze_for_clickbait(
     else:
         content_section = "No transcript available"
 
-    system_prompt = """You are a YouTube clickbait detector. Your job is to analyze whether a video's title makes claims that the video content does not substantiate.
+    today = __import__('datetime').date.today().isoformat()
+    system_prompt = f"""Today is {today}. You are a YouTube clickbait detector. Your job is to analyze whether a video's title makes claims that the video content does not substantiate.
 
 Key indicators of clickbait:
 - Title makes a definitive claim (e.g., "Leak confirmed", "Breaking news") but the video only contains speculation or rumors
