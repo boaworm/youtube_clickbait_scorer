@@ -29,15 +29,11 @@
   margin-top: 8px;
   margin-bottom: 8px;
   align-items: center;
-  position: relative;
-  z-index: 10000;
   background: transparent;
 }
 
 .cdp-results-inline .cdp-thumb-btn {
   flex-shrink: 0;
-  position: relative;
-  z-index: 10001;
 }
 
 .cdp-results-inline .cdp-result {

@@ -8,7 +8,7 @@ A backend service must be running on `http://localhost:4004`. You can use the
 reference implementation from this repo:
 
 ```bash
-cd /Users/henrik/src/youtube-verifier
+cd ..
 python -m src.main --webserver
 ```
 
