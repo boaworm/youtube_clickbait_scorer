@@ -4,7 +4,7 @@ A Chrome/Vivaldi extension that analyzes YouTube videos for clickbait titles.
 
 ## Requirements
 
-A backend service must be running on `http://localhost:4004`. You can use the
+A backend service must be running on `http://localhost:4100`. You can use the
 reference implementation from this repo:
 
 ```bash
@@ -37,11 +37,11 @@ Or any compatible service that exposes the `/analyze-stream` endpoint.
 
 ### "Server error" when clicking analyze
 - Verify the backend is running: `python -m src.main --webserver`
-- Check that the server is accessible at `http://localhost:4004`
+- Check that the server is accessible at `http://localhost:4100`
 - Look at the browser console (F12) for error details
 
 ### CORS errors
-- The extension is configured to access `localhost:4004`
+- The extension is configured to access `localhost:4100`
 - Ensure the backend has CORS enabled (it does by default in FastAPI)
 
 ## Files

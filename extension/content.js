@@ -1,8 +1,6 @@
 // YouTube Clickbait Detector - Content Script
 // Runs on YouTube pages, injects UI and handles user interactions
 
-const DEFAULT_BACKEND_URL = 'http://localhost:4004';
-
 let isPanelInjected = false;
 
 function getBackendUrl() {
@@ -190,6 +188,7 @@ async function handleAnalyzeInline(url, resultsDiv) {
   // Set loading states with animation
   metadataResult.textContent = 'Metadata: ...';
   metadataResult.classList.add('cdp-loading');
+  fullResult.textContent = 'Transcript: ...';
   fullResult.classList.add('cdp-loading');
 
   console.log('INFO: Analyzing video:', url);
@@ -200,8 +199,9 @@ async function handleAnalyzeInline(url, resultsDiv) {
   }
   resultsDiv._abortController = new AbortController();
 
+  let backendUrl = DEFAULT_BACKEND_URL;
   try {
-    const backendUrl = await getBackendUrl();
+    backendUrl = await getBackendUrl();
     const response = await fetch(backendUrl + '/analyze-stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -279,7 +279,11 @@ async function handleAnalyzeInline(url, resultsDiv) {
     }
   } catch (err) {
     if (err.name !== 'AbortError') {
-      metadataResult.textContent = 'Error: ' + err.message;
+      const errorMsg = 'Failed to talk to backend: ' + backendUrl;
+      metadataResult.textContent = errorMsg;
+      metadataResult.classList.remove('cdp-loading');
+      fullResult.textContent = errorMsg;
+      fullResult.classList.remove('cdp-loading');
     }
   }
 }

@@ -22,7 +22,7 @@ python -m src.main "https://www.youtube.com/watch?v=VIDEO_ID"
 # Verbose output (shows full description and transcript)
 python -m src.main -v "https://www.youtube.com/watch?v=VIDEO_ID"
 
-# Launch web UI (runs on http://localhost:4004)
+# Launch web UI (runs on http://localhost:4100)
 python -m src.main --webserver
 ```
 
@@ -161,7 +161,7 @@ or getting inconsistent results, you may need to adjust:
 
 ## Web UI
 
-Run `python -m src.main --webserver` to launch a web interface on port 4004.
+Run `python -m src.main --webserver` to launch a web interface on port 4100.
 
 The UI provides:
 - Text input for YouTube URLs
@@ -184,7 +184,7 @@ The UI provides:
 
 API endpoint:
 ```bash
-curl -X POST http://localhost:4004/analyze \
+curl -X POST http://localhost:4100/analyze \
   -H "Content-Type: application/json" \
   -d '{"url":"https://www.youtube.com/watch?v=VIDEO_ID"}'
 ```
@@ -201,7 +201,7 @@ The extension integrates the detector directly into YouTube, adding a "Clickbait
 
 ### Configuring the Backend URL
 
-By default the extension points to `http://localhost:4004` (the local server started with `--webserver`). To point it at a remote server:
+By default the extension points to `http://localhost:4100` (the local server started with `--webserver`). To point it at a remote server:
 
 1. Right-click the extension icon → **Options**, or go to `chrome://extensions` → **Details** → **Extension options**
 2. Enter the full base URL of your backend, e.g. `https://clickbait.example.com`
@@ -209,7 +209,7 @@ By default the extension points to `http://localhost:4004` (the local server sta
 
 The setting is synced across Chrome profiles via `chrome.storage.sync`.
 
-> **Note:** The server must be reachable from the browser and serve HTTPS if YouTube is loaded over HTTPS (mixed-content rules apply in Chrome). For local use, `http://localhost:4004` works fine.
+> **Note:** The server must be reachable from the browser and serve HTTPS if YouTube is loaded over HTTPS (mixed-content rules apply in Chrome). For local use, `http://localhost:4100` works fine.
 
 ## Troubleshooting
 

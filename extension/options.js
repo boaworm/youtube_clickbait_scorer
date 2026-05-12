@@ -1,5 +1,3 @@
-const DEFAULT_BACKEND_URL = 'http://localhost:4004';
-
 document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.sync.get(['backendUrl'], (result) => {
     document.getElementById('backendUrl').value = result.backendUrl || DEFAULT_BACKEND_URL;

@@ -488,7 +488,7 @@ _UVICORN_LOG_CONFIG = {
 }
 
 
-def run_server(host: str = "0.0.0.0", port: int = 4004):
+def run_server(host: str = "0.0.0.0", port: int = int(os.getenv("BACKEND_PORT", "4100"))):
     """Run the web server."""
     import uvicorn
     uvicorn.run(app, host=host, port=port, log_config=_UVICORN_LOG_CONFIG)

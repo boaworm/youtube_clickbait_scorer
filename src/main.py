@@ -37,17 +37,19 @@ def main():
     parser.add_argument(
         "--webserver",
         action="store_true",
-        help="Launch web UI on port 4004"
+        help="Launch web UI on port 4100"
     )
 
     args = parser.parse_args()
 
     # Launch web server mode
     if args.webserver:
+        import os
         from src.webserver import run_server
+        port = int(os.getenv("BACKEND_PORT", "4100"))
         ts = datetime.now().strftime("[%H:%M:%S]")
         print(f"{ts} Starting YouTube Clickbait Detector web UI...")
-        print(f"{ts} Open http://localhost:4004 in your browser")
+        print(f"{ts} Open http://localhost:{port} in your browser")
         run_server()
         return
 
