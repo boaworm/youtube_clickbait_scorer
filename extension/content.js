@@ -28,19 +28,11 @@ function getVideoUrl() {
 
 // Extract video ID from a thumbnail link
 function getVideoIdFromElement(el) {
-  // Try multiple possible link selectors
   const link = el.querySelector('a#video-title, a#thumbnail, a[href*="v="]');
   if (link) {
-    const href = link.href;
-    console.log('[Clickbait] Found link:', href);
-    // Extract video ID from URL like /watch?v=VIDEO_ID
-    const match = href.match(/[?&]v=([^&]+)/);
-    if (match && match[1]) {
-      console.log('[Clickbait] Extracted video ID:', match[1]);
-      return match[1];
-    }
+    const match = link.href.match(/[?&]v=([^&]+)/);
+    if (match && match[1]) return match[1];
   }
-  console.log('[Clickbait] No link found in element');
   return null;
 }
 
@@ -288,20 +280,44 @@ async function handleAnalyzeInline(url, resultsDiv) {
   }
 }
 
+const VIDEO_RENDERER_TAGS = new Set([
+  'YTD-VIDEO-RENDERER',
+  'YTD-GRID-VIDEO-RENDERER',
+  'YTD-RICH-ITEM-RENDERER',
+]);
+
 // Observe DOM changes to detect page navigation and new videos
 function setupObserver() {
+  let debounceTimer = null;
+  let pendingThumbnails = false;
+  let pendingPanel = false;
+
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
-      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        const videoId = getVideoId();
-        if (videoId && !isPanelInjected) {
-          console.log('[Clickbait] Detected video page, injecting panel');
-          injectPanel();
+      if (mutation.type !== 'childList' || mutation.addedNodes.length === 0) continue;
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        if (VIDEO_RENDERER_TAGS.has(node.tagName) || node.querySelector?.('ytd-video-renderer, ytd-rich-item-renderer')) {
+          pendingThumbnails = true;
         }
-        // Also inject buttons on any newly loaded video thumbnails
-        injectButtonsOnThumbnails();
+        if (node.tagName === 'YTD-WATCH-METADATA-RENDERER' || node.id === 'above-the-fold') {
+          pendingPanel = true;
+        }
       }
     }
+
+    if (!pendingThumbnails && !pendingPanel) return;
+
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      if (pendingPanel && getVideoId() && !isPanelInjected) {
+        injectPanel();
+      } else if (pendingThumbnails) {
+        injectButtonsOnThumbnails();
+      }
+      pendingThumbnails = false;
+      pendingPanel = false;
+    }, 300);
   });
 
   observer.observe(document.body, { childList: true, subtree: true });
