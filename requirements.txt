@@ -13,6 +13,9 @@ beautifulsoup4>=4.12.0
 mlx>=0.29.4
 mlx-whisper==0.4.3
 
+# AI-voiceover detection (wav2vec2-based deepfake audio classifier, runs on MPS)
+transformers>=4.40.0
+
 # Web server
 fastapi>=0.109.0
 uvicorn>=0.27.0

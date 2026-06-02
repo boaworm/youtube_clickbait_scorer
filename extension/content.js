@@ -49,6 +49,7 @@ function getVideoUrlFromElement(el) {
 function applyCacheResult(resultsDiv, cached) {
   const metadataResult = resultsDiv.querySelector('.cdp-metadata-result');
   const fullResult = resultsDiv.querySelector('.cdp-full-result');
+  const voiceoverResult = resultsDiv.querySelector('.cdp-voiceover-result');
 
   if (cached.metadata_score !== undefined) {
     const isClickbait = cached.metadata_score >= 50;
@@ -64,6 +65,14 @@ function applyCacheResult(resultsDiv, cached) {
     fullResult.className = 'cdp-result cdp-full-result ' + (isClickbait ? 'cdp-bad' : 'cdp-good');
     fullResult.title = cached.transcript_argument || '';
     fullResult.dataset.reasoning = cached.transcript_argument || '';
+  }
+
+  if (voiceoverResult && cached.voiceover_score !== undefined) {
+    const isAi = cached.voiceover_is_ai === true || cached.voiceover_score >= 50;
+    voiceoverResult.textContent = 'AI Audio: ' + cached.voiceover_score + '/100';
+    voiceoverResult.className = 'cdp-result cdp-voiceover-result ' + (isAi ? 'cdp-bad' : 'cdp-good');
+    voiceoverResult.title = cached.voiceover_argument || '';
+    voiceoverResult.dataset.reasoning = cached.voiceover_argument || '';
   }
 }
 
@@ -117,6 +126,7 @@ function injectButtonsOnThumbnails() {
       <button class="cdp-thumb-btn">Clickbait?</button>
       <span class="cdp-result cdp-metadata-result">Metadata: --</span>
       <span class="cdp-result cdp-full-result">Transcript: --</span>
+      <span class="cdp-result cdp-voiceover-result">AI Audio: --</span>
     `;
 
     // Insert at the top of the video renderer to avoid being covered
@@ -153,6 +163,7 @@ function injectWatchPanel() {
     <button class="cdp-thumb-btn">Clickbait?</button>
     <span class="cdp-result cdp-metadata-result">Metadata: --</span>
     <span class="cdp-result cdp-full-result">Transcript: --</span>
+    <span class="cdp-result cdp-voiceover-result">AI Audio: --</span>
   `;
 
   anchor.parentNode.insertBefore(resultsDiv, anchor);
@@ -176,12 +187,17 @@ function injectPanel() {
 async function handleAnalyzeInline(url, resultsDiv) {
   const metadataResult = resultsDiv.querySelector('.cdp-metadata-result');
   const fullResult = resultsDiv.querySelector('.cdp-full-result');
+  const voiceoverResult = resultsDiv.querySelector('.cdp-voiceover-result');
 
   // Set loading states with animation
   metadataResult.textContent = 'Metadata: ...';
   metadataResult.classList.add('cdp-loading');
   fullResult.textContent = 'Transcript: ...';
   fullResult.classList.add('cdp-loading');
+  if (voiceoverResult) {
+    voiceoverResult.textContent = 'AI Audio: ...';
+    voiceoverResult.classList.add('cdp-loading');
+  }
 
   console.log('INFO: Analyzing video:', url);
 
@@ -252,6 +268,12 @@ async function handleAnalyzeInline(url, resultsDiv) {
                 fullResult.classList.remove('cdp-loading');
                 fullResult.className = 'cdp-result cdp-full-result cdp-disabled';
                 fullResult.title = jsonData.reason;
+                if (voiceoverResult) {
+                  voiceoverResult.textContent = 'AI Audio: Disabled - Live';
+                  voiceoverResult.classList.remove('cdp-loading');
+                  voiceoverResult.className = 'cdp-result cdp-voiceover-result cdp-disabled';
+                  voiceoverResult.title = jsonData.reason;
+                }
               } else {
                 const text = (jsonData.is_clickbait ? 'CLICKBAIT' : 'OK') + ' (' + jsonData.score + '/100)';
                 fullResult.textContent = 'Transcript: ' + text;
@@ -259,6 +281,14 @@ async function handleAnalyzeInline(url, resultsDiv) {
                 fullResult.className = 'cdp-result cdp-full-result ' + (jsonData.is_clickbait ? 'cdp-bad' : 'cdp-good');
                 fullResult.dataset.reasoning = jsonData.reasoning;
                 fullResult.title = jsonData.reasoning;
+              }
+            } else if (eventName === 'voiceover') {
+              if (voiceoverResult) {
+                voiceoverResult.textContent = 'AI Audio: ' + jsonData.score + '/100';
+                voiceoverResult.classList.remove('cdp-loading');
+                voiceoverResult.className = 'cdp-result cdp-voiceover-result ' + (jsonData.is_ai ? 'cdp-bad' : 'cdp-good');
+                voiceoverResult.dataset.reasoning = jsonData.reasoning;
+                voiceoverResult.title = jsonData.reasoning;
               }
             } else if (eventName === 'error') {
               metadataResult.textContent = 'Error: ' + jsonData.message;

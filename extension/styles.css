@@ -55,6 +55,11 @@
   color: #333;
 }
 
+.cdp-results-inline .cdp-voiceover-result {
+  background: #e0e0e0;
+  color: #333;
+}
+
 .cdp-results-inline .cdp-bad {
   background: #ffebee;
   color: #c62828;

@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from typing import AsyncGenerator, Optional
 
-from .youtube_fetcher import fetch_video_data, fetch_video_metadata, fetch_transcript, extract_video_id, clean_old_cache
+from .youtube_fetcher import fetch_video_data, fetch_video_metadata, fetch_transcript, fetch_voice_authenticity, extract_video_id, clean_old_cache
 
 
 def _ts():
@@ -174,6 +174,25 @@ async def analyze_stream(url: str) -> AsyncGenerator[str, None]:
                         "is_clickbait": analysis.is_clickbait,
                         "reasoning": analysis.reasoning
                     })
+
+                    voice = await asyncio.to_thread(fetch_voice_authenticity, video_id)
+                    if voice is not None:
+                        ai_pct = int(round(voice["ai_probability"] * 100))
+                        cache_entry["voiceover_score"] = ai_pct
+                        cache_entry["voiceover_is_ai"] = voice["is_ai"]
+                        cache_entry["voiceover_argument"] = (
+                            f"{voice['ai_chunks']}/{voice['num_chunks']} {voice['chunk_seconds']}s windows "
+                            f"in the first {voice['sample_seconds']}s scored above the "
+                            f"{int(voice['chunk_ai_threshold']*100)}% AI threshold "
+                            f"(mean AI score: {voice['mean_ai_score']:.2f}). "
+                            f"Model: {voice['model']} on {voice['device']}. "
+                            f"Note: music, silence, and heavy audio compression can cause false positives."
+                        )
+                        yield send("voiceover", {
+                            "score": ai_pct,
+                            "is_ai": voice["is_ai"],
+                            "reasoning": cache_entry["voiceover_argument"],
+                        })
                 else:
                     yield send("error", {"message": "Could not transcribe audio"})
 
@@ -249,6 +268,7 @@ HTMLContent = """
         .result h3 { margin-top: 0; color: #555; }
         #metadata-result { border-left: 4px solid #2196F3; }
         #full-result { border-left: 4px solid #4CAF50; }
+        #voiceover-result { border-left: 4px solid #FF9800; }
         .results-container {
             display: flex;
             gap: 20px;
@@ -323,6 +343,11 @@ HTMLContent = """
             <div class="score" id="full-score">Waiting for transcript...</div>
             <div class="reasoning" id="full-reasoning"></div>
         </div>
+        <div class="result" id="voiceover-result">
+            <h3>Voiceover Authenticity</h3>
+            <div class="score" id="voiceover-score">Waiting for audio analysis...</div>
+            <div class="reasoning" id="voiceover-reasoning"></div>
+        </div>
     </div>
     <script>
         let controller = null;
@@ -349,6 +374,14 @@ HTMLContent = """
             document.getElementById('full-result').classList.remove('empty');
         }
 
+        function showVoiceoverResult(score, isAi, reasoning) {
+            const scoreEl = document.getElementById('voiceover-score');
+            scoreEl.textContent = (isAi ? 'AI VOICE' : 'HUMAN VOICE') + ' (' + score + '% AI)';
+            scoreEl.className = 'score ' + (isAi ? 'clickbait' : 'safe');
+            document.getElementById('voiceover-reasoning').textContent = reasoning;
+            document.getElementById('voiceover-result').classList.remove('empty');
+        }
+
         async function analyze() {
             const url = document.getElementById('url').value;
             const btn = document.getElementById('btn');
@@ -364,10 +397,13 @@ HTMLContent = """
             btn.disabled = true;
             document.getElementById('metadata-result').classList.add('empty');
             document.getElementById('full-result').classList.add('empty');
+            document.getElementById('voiceover-result').classList.add('empty');
             document.getElementById('metadata-score').textContent = 'Waiting for data...';
             document.getElementById('full-score').textContent = 'Waiting for transcript...';
+            document.getElementById('voiceover-score').textContent = 'Waiting for audio analysis...';
             document.getElementById('metadata-reasoning').textContent = '';
             document.getElementById('full-reasoning').textContent = '';
+            document.getElementById('voiceover-reasoning').textContent = '';
             updateStatus('Connecting...');
 
             try {
@@ -422,6 +458,8 @@ HTMLContent = """
                                     const initialScoreValue = initialScore ? initialScore[0] : '?';
                                     showFullResult(jsonData.score, jsonData.is_clickbait, jsonData.reasoning, initialScoreValue);
                                     updateStatus('');
+                                } else if (event === 'voiceover') {
+                                    showVoiceoverResult(jsonData.score, jsonData.is_ai, jsonData.reasoning);
                                 } else if (event === 'error') {
                                     updateStatus('Error: ' + jsonData.message);
                                 } else if (event === 'done') {

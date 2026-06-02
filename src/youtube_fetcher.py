@@ -7,10 +7,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from concurrent.futures import ThreadPoolExecutor
+
 from .metadata_extractor import extract_video_id, get_video_info as get_info_ytdlp
 from .video_downloader import download_audio
 from .audio_extractor import convert_audio
 from .transcriber import transcribe
+from .voice_authenticity import analyze_voice, load_cached as load_cached_voice
 
 
 def _ts():
@@ -50,6 +53,28 @@ def clean_old_cache(max_entries: int = 10):
             print(f"{_ts()} INFO: Cleaned old cache: {old_dir.name}")
         except Exception as e:
             print(f"{_ts()} INFO: Failed to clean cache {old_dir.name}: {e}")
+
+
+def _run_voice_analysis(wav_file: Path, cache_dir: Path, video_url: str) -> Optional[dict]:
+    """Run voice-authenticity detection; never raise — return None on failure."""
+    try:
+        print(f"{_ts()} INFO: [{video_url}] Analyzing voice authenticity")
+        _t = time.monotonic()
+        result = analyze_voice(wav_file, cache_dir=cache_dir)
+        print(
+            f"{_ts()} INFO: [{video_url}] Analyzing voice authenticity "
+            f"[DONE in {round(time.monotonic() - _t)} sec] "
+            f"ai_probability={result['ai_probability']} is_ai={result['is_ai']}"
+        )
+        return result
+    except Exception as e:
+        print(f"{_ts()} INFO: [{video_url}] Voice analysis failed: {type(e).__name__}: {e}")
+        return None
+
+
+def fetch_voice_authenticity(video_id: str) -> Optional[dict]:
+    """Return cached voice-authenticity result for a video, or None if not yet analyzed."""
+    return load_cached_voice(get_cache_dir(video_id))
 
 
 def fetch_video_metadata(video_id: str) -> dict:
@@ -112,10 +137,14 @@ def fetch_transcript(video_id: str, verbose: bool = False) -> Optional[str]:
                 print(f"{_ts()} INFO: [{video_url}] Converting to WAV for Whisper...")
             convert_audio(audio_file, wav_file)
 
-        print(f"{_ts()} INFO: [{video_url}] Transcribing audio")
-        _t = time.monotonic()
-        transcript = transcribe(wav_file, model="mlx-community/whisper-large-v3-turbo")
-        print(f"{_ts()} INFO: [{video_url}] Transcribing audio [DONE in {round(time.monotonic() - _t)} sec]")
+        # Run voice-authenticity detection in parallel with Whisper transcription
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            voice_future = executor.submit(_run_voice_analysis, wav_file, cache_dir, video_url)
+            print(f"{_ts()} INFO: [{video_url}] Transcribing audio")
+            _t = time.monotonic()
+            transcript = transcribe(wav_file, model="mlx-community/whisper-large-v3-turbo")
+            print(f"{_ts()} INFO: [{video_url}] Transcribing audio [DONE in {round(time.monotonic() - _t)} sec]")
+            voice_future.result()  # surface errors but don't block transcript return value
         transcript_file.write_text(transcript)
 
         if verbose:

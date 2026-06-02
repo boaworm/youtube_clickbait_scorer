@@ -7,4 +7,6 @@ venv/
 .env
 *.log
 tmp/
+huggingface/
+ytv-env/
 .DS_Store
